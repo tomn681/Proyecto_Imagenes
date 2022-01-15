@@ -1,3 +1,7 @@
+'''
+@author: Tomás de la Sotta (github @tomn681)
+'''
+
 import os
 import time
 import torch
@@ -10,8 +14,34 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torchvision.transforms
 
+'''
+Class Evaluator:
+
+Simple NN evaluator for object detection. It implements the ability 
+plot real and predicted class and box values. It also allows to 
+calculate the classification accuracy and the mean box IoU. 			
+'''
 class Evaluator():
 
+	'''
+	Evaluator Constructor 
+
+	Inputs:
+
+	    - model -> (torchvision.models.detection) Model to Evaluate
+	    
+	    - dataset -> (utils.dataset.ClothingDataset) Dataset used to test
+	     
+	    - n_classes -> (Int) Number of classes on 
+		        dataset + 1 (Class 0 represents 
+		        backround)
+		        
+	    - batch_size -> (Int) Batch size used
+		        while testing. Default: 32
+		        
+	    - use_gpu -> (Bool) If False, training on CPU. Default: True
+	    
+	    '''
 	def __init__(self, model, dataset, n_classes, batch_size=32, use_gpu=True):
 		self.model = model
 		
@@ -27,29 +57,58 @@ class Evaluator():
 		
 		self.to_image = torchvision.transforms.ToPILImage()
 		
-	def load_from_disk(self, path):
-		self.model.to('cpu')
-		self.model.load_state_dict(torch.load(path))
-		self.model.to(self.device)
 		
+	'''
+	get_iou:
+	
+	Static Method. Calculates the mean IoU for a given batch.
+	
+	Inputs:
+		- None
+		
+	Outputs: 
+		- real: (Dict(list)) Target dict.
+		- predicted: (Dict(List)) Predicted dict.
+	'''
 	@staticmethod
-	def get_iou(real_box, predicted_box):
-		xmin, ymin, xmax, ymax = real_box
-		xmin_pred, ymin_pred, xmax_pred, ymax_pred = predicted_box
+	def get_iou(real, predicted):
+	
+		output = []
+	
+		for real_box, predicted_box in zip(real, predicted):
+			xmin, ymin, xmax, ymax = real_box
+			xmin_pred, ymin_pred, xmax_pred, ymax_pred = predicted_box
+			
+			#Intersection
+			delta_x = abs(min(xmax, xmax_pred) - max(xmin, xmin_pred))
+			delta_y = abs(min(ymax, ymax_pred) - max(ymin, ymin_pred))
+			
+			intersection = delta_x*delta_y
+			
+			#Union
+			union = (xmax-xmin)*(ymax-ymin) + (xmax_pred-xmin_pred)*(ymax_pred-ymin_pred) - intersection + 1e-8
+			
+			iou = abs(intersection/union)
+			
+			output.append(iou)
 		
-		#Intersection
-		delta_x = max(min(xmax, xmax_pred) - max(xmin, xmin_pred), 0)
-		delta_y = max(min(ymax, ymax_pred) - max(ymin, ymin_pred), 0)
+		return torch.mean(torch.stack(output))
 		
-		intersection = delta_x*delta_y
+	'''
+	plot:
+	
+	Image showing application. Shows images with its corresponding
+	real and predicted bounding boxes and classes.
+	
+	Inputs:
+		- None
 		
-		#Union
-		union = (xmax-xmin)*(ymax-ymin) + (xmax_pred-xmin_pred)*(ymax_pred-ymin_pred) - intersection + 1e-8
-		
-		return intersection/union
-		
+	Outputs: 
+		- Matplotlib image (Standard Output, no return type)
+	'''
 	def plot(self):
 		self.model.eval()
+		self.model = self.model.to(self.device)
 		
 		cnt = 0
 		n_imgs = 10
@@ -67,7 +126,6 @@ class Evaluator():
 				images = list(image.to(self.device) for image in images)
 				
 				predictions = self.model(images)
-				print(predictions)
 				
 				predictions = [{k: v for k, v in t.items()} for t in predictions]
 				
@@ -110,16 +168,31 @@ class Evaluator():
 			plt.title(f'Clase Real: {imgs[i][1]}\nClase Predicha: {imgs[i][2]}')
 		plt.show()
 		
-		self.model.to(self.device)
 		
+	'''
+	evaluate:
+	
+	Calculates the accuracy and mean box IoU of the given dataset.
+	
+	Inputs:
+		- None
+		
+	Outputs: 
+		- metric_logger (utils.utils.MetricLogger)
+    			
+		- Classification accuracy (float)
+		
+		- Box mean IoU (float)
+	'''
 	def evaluate(self):
 		self.model.eval()
+		self.model = self.model.to(self.device)
 		
 		print('Evaluating model...')
 		
-		iou, label = torch.zeros(0), torch.zeros(0)
+		iou, label = [], torch.zeros(0, device=self.device)
 		
-		batch_cnt = 0
+		batch_cnt, eta, tt = 0, 0, 0
 		
 		with torch.no_grad():
 		
@@ -139,27 +212,30 @@ class Evaluator():
 				
 				predictions = [{k: v[0].to(self.device) for k, v in t.items()} for t in predictions]
 				
-				pred_boxes = torch.stack([t['boxes'][0] for t in predictions])
+				pred_boxes = torch.stack([t['boxes'] for t in predictions])
 				pred_labels = torch.stack([t['labels'] for t in predictions])
 				
 				#Evaluation
 				label = torch.cat([label, labels == pred_labels])
-				#iou = torch.cat(get_iou(boxes, pred_boxes))
-				
-				tt = time.time()-start_time
-				eta = eta*(1-1//(batch_cnt+1)) + tt*(self.length//self.batch_size-batch_cnt)*(1//(batch_cnt+1))
-				
-				print(f'BATCH {batch_cnt} FINISHED IN {int(tt//60)}:{int(tt%60)}s\t ETA: {int(eta//60)}:{int(eta%60)}s')
+				iou.append(self.get_iou(boxes, pred_boxes))
 				
 				batch_cnt += 1
+				
+				tt = (time.time()-start_time)*(1//batch_cnt) + tt*(1-1//batch_cnt) #Mean total time
+				eta = max(tt*(self.length//self.batch_size-batch_cnt), 0) #Estimated time for remaining batches
+				
+				print(f'BATCH {batch_cnt} FINISHED IN\t' + f'{int(time.time()-start_time)//60}'.zfill(2) 
+					+ ':' +f'{int(time.time()-start_time)%60}'.zfill(2) + f's ({int((time.time()-start_time)*1000)}ms)\t ETA: ' + f'{int(eta//60)}'.zfill(2) 
+					+ ':' + f'{int(eta%60)}'.zfill(2) + 's')
+				
 				
 				
 					
 		accuracy = sum(label)/len(label)
 		iou = sum(iou)/len(iou)
 		
-		print('Finished Evaluating!')
-		print(f'Classification Accuracy: {accuracy}, Box Mean IoU: {iou}')
+		print('\nFinished Evaluating!')
+		print(f'\nClassification Accuracy: {accuracy}, Box Mean IoU: {iou}')
 
-		return metric_logger, accuracy, iou
+		return accuracy, iou
 

@@ -1,11 +1,52 @@
+'''
+@author: Tomás de la Sotta (github @tomn681)
+'''
+
 import os
 import time
 import torch
 import numpy as np
+import torchvision
 import utils.utils as utils
 
+'''
+Class Trainer:
+
+Implements NN training for object detection. 
+It does not evaluate on test sets. 			
+'''
 class Trainer():
 
+	'''
+	Trainer Constructor 
+
+	Inputs:
+
+	    - model -> (torchvision.models.detection) Model to Train
+	    
+	    - dataset -> (utils.dataset.ClothingDataset) Dataset used to train
+	     
+	    - n_classes -> (Int) Number of classes on 
+		        dataset + 1 (Class 0 represents 
+		        backround)
+		        
+	    - train_size -> (Float) Percentage of training 
+		        size division. If train_size == 0.7, 
+		        train_set will be 70% of given dataset 
+		        and test_set, 30% of it. Default: 0.7
+		        
+	    - train_batch_size -> (Int) Batch size used
+		        while training. Default: 32
+		        
+	    - optimizer -> (torch.optim) Optimizer. Default: Adam.
+		        
+	    - lr_scheduler -> (torch.optim) Learning-Rate 
+		        Scheduler. If None, the learning-rate will
+		        be kept constant. Default: None
+		        
+	    - use_gpu -> (Bool) If False, training on CPU. Default: True
+	    
+	    '''
 	def __init__(self, model, dataset, n_classes, train_size=0.7, train_batch_size=32, optimizer=None, lr_scheduler=None, use_gpu=True):
 		self.model = model
 		
@@ -31,15 +72,32 @@ class Trainer():
 		self.n_classes = n_classes
 		self.device = torch.device('cuda') if (torch.cuda.is_available() and use_gpu) else torch.device('cpu')
 		
+		self.classification_name = 'loss_classifier' if type(model) == torchvision.models.detection.faster_rcnn.FasterRCNN else 'classification'
+		self.box_name = 'loss_box_reg' if type(model) == torchvision.models.detection.faster_rcnn.FasterRCNN else 'bbox_regression'
+		
 		self.model.to(self.device)
 		
-	def load_from_disk(self, path):
-		self.model.to('cpu')
-		self.model = torch.load(path)
-		self.model.to(self.device)
-		return self.model
-		
-	def train_one_epoch(self, epoch, print_freq):
+	'''
+	train_one_epoch: 
+	
+	Trains the model for one epoch. Prints training status every
+	<print_freq> batches.
+    		
+    		Inputs: 
+    			- epoch: (Int) the number of the actual 
+    				training epoch	
+    				
+    			- print_freq: (Int) Number of batches before 
+    				every train status print. Default: 100
+    				
+    		Outputs:
+    			- metric_logger (utils.utils.MetricLogger)
+    			
+    			- Classification loss mean (float)
+    			
+    			- Box loss mean (float)
+	'''
+	def train_one_epoch(self, epoch, print_freq=100):
 		self.model.train()
 		
 		loss_classifier, loss_box = [], []
@@ -57,9 +115,10 @@ class Trainer():
 
 			loss_dict = self.model(images, targets)
 			losses = sum(loss for loss in loss_dict.values())
+			print(loss_dict)
 
-			loss_classifier.append(loss_dict['classification'].item())
-			loss_box.append(loss_dict['bbox_regression'].item())
+			loss_classifier.append(loss_dict[self.classification_name].item())
+			loss_box.append(loss_dict[self.box_name].item())
 
 			#Backward
 			self.optimizer.zero_grad()
@@ -72,6 +131,23 @@ class Trainer():
 
 		return metric_logger, np.mean(loss_classifier), np.mean(loss_box)
 		
+	'''
+	validate:
+	
+	Runs test_set over the model to retrieve validation loss status
+	of the corresponding model state.
+    		
+    		Inputs:
+    			- print_freq: (Int) Number of batches before 
+    				every train status print. Default: 100
+    				
+    		Outputs:
+    			- metric_logger (utils.utils.MetricLogger)
+    			
+    			- Classification loss mean (float)
+    			
+    			- Box loss mean (float)
+	'''
 	def validate(self, print_freq=100):
 		self.model.train()
 		
@@ -89,13 +165,56 @@ class Trainer():
 				loss_dict = self.model(images, targets)
 				losses = sum(loss for loss in loss_dict.values())
 
-				loss_classifier.append(loss_dict['classification'].item())
-				loss_box.append(loss_dict['bbox_regression'].item())
+				loss_classifier.append(loss_dict[self.classification_name].item())
+				loss_box.append(loss_dict[self.box_name].item())
 
 				metric_logger.update(loss=losses, **loss_dict)
 
 		return metric_logger, np.mean(loss_classifier), np.mean(loss_box)
 		
+	'''
+	train:
+	
+	Runs a full train over the given model. Trains by epoch and validates each 
+	epoch over test_set. Retrieves train and validation losses returning a 
+	dictionary. Saves the model state for each epoch in a given directory.
+    		
+    		Inputs:
+    			- epochs: Number of total epochs to train. 
+    				Default: 100
+    				
+    			- print_every: (Int) Number of batches before 
+    				every train status print. Default: 100
+    				
+    			- checkpoints_path: (String) Checkpoint saving 
+    				directory. Deafult: './checkpoints'
+    				
+    			- checkpoint_prefix:(String) Base name of each 
+    				checkpoint file. Default: 'checkpoint_'
+    				
+    		Outputs: 
+    			- train_loss: (dict(list, list)) Train loss dict.
+    				Stores Classification and box losses for
+		    		each trained epoch over the test_set.
+		    		
+				  Keys:
+				     - 'loss_classifier': (list) Epoch-wise
+				     		train_set classification loss.
+				     		
+				     - 'loss_box': (list) Epoch-wise
+				     		train_set box regression loss.
+
+		    	- validation_loss: (dict(list, list)) Validation loss 
+		    		dict. Stores Classification and box losses for
+		    		each trained epoch over the test_set.
+		    		
+				       Keys:
+				          - 'loss_classifier': (list) Epoch-wise
+				     		test_set classification loss.
+				     		
+				          - 'loss_box': (list) Epoch-wise
+				     		test_set box regression loss.
+	'''
 	def train(self, epochs=100, print_every=100, checkpoints_path='./checkpoints', checkpoint_prefix='checkpoint_'):
 		start_time = time.time()
 		
@@ -135,6 +254,8 @@ class Trainer():
 		test_loss = {'loss_classifier': test_loss_classifier, 'loss_box': test_loss_box}
 			
 		tt = time.time() - start_time
-		print(f'\nFinished Training in {int(tt//3600)}:{int((tt//60))%60}:{int(tt%60%60)}')
+		
+		print('\nFinished Training in ' + f'{int(tt//3600)}'.zfill(2) + ':' + f'{int((tt//60))%60}'.zfill(2) 
+			+ ':' + f'{int(tt%60%60)}'.zfill(2))
 		
 		return train_loss, test_loss

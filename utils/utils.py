@@ -1,3 +1,10 @@
+'''
+@author: fmassa
+
+WPP: https://github.com/pytorch/vision/blob/v0.3.0/references/detection/engine.py
+'''
+
+
 from __future__ import print_function
 
 from collections import defaultdict, deque
