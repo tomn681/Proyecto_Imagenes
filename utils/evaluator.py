@@ -64,11 +64,11 @@ class Evaluator():
 	Static Method. Calculates the mean IoU for a given batch.
 	
 	Inputs:
-		- None
+		- real: (list) Target boxes.
+		- predicted: (List) Predicted boxes.
 		
 	Outputs: 
-		- real: (Dict(list)) Target dict.
-		- predicted: (Dict(List)) Predicted dict.
+		- Batch mean IoU value.
 	'''
 	@staticmethod
 	def get_iou(real, predicted):
