@@ -37,7 +37,7 @@ class ClothingDataset(torch.utils.data.Dataset):
 		            - 'val_bbox.txt':           (Int, Int, Int, Int) X1, Y1, X2, Y2 
 		            - 'val_cate.txt':           (Int) Class
 		            
-		- transforms: (torchvision.transforms) Data Augmentation Transforms.
+		- transforms: (object containing torchvision.tranforms) Data Augmentation Transforms.
 		
 		- train: (String) If 'train', opens train and validation files.
 			If 'test' opens test files and transforms = None.
@@ -99,7 +99,7 @@ class ClothingDataset(torch.utils.data.Dataset):
 	def __getitem__(self, idx):
 		img_path = os.path.join('../data', self.imgs['path'][idx])
 		
-		img = Image.open(img_path).convert("RGB")
+		img = Image.open(img_path).convert('RGB')
 
 		xmin = min(self.imgs['x1'][idx], self.imgs['x2'][idx])
 		xmax = max(self.imgs['x1'][idx], self.imgs['x2'][idx])
@@ -115,16 +115,17 @@ class ClothingDataset(torch.utils.data.Dataset):
 		area = torch.tensor([(box[3] - box[1]) * (box[2] - box[0]),])
 
 		target = {}
-		target["boxes"] = boxes
-		target["labels"] = labels
-		target["image_id"] = image_id
-		target["area"] = area
-		target["img_path"] = img_path
-
+		target['boxes'] = boxes
+		target['labels'] = labels
+		target['image_id'] = image_id
+		target['area'] = area
+		target['img_path'] = img_path
+		
 		if self.transforms is not None:
 		    img, target = self.transforms(img, target)
 		    
 		img = self.to_tensor(img)
+		
 		img = self.resize(img)
 
 		return img, target
@@ -164,7 +165,7 @@ class ClothingDataset(torch.utils.data.Dataset):
 		for image, target in self:
 			label = target['labels']
 			box = target['boxes'][0]
-			image = np.array(Image.open(target['img_path']).convert("RGB"))
+			image = np.array(Image.open(target['img_path']).convert('RGB'))
 			startpoint, endpoint = (int(box[0]), int(box[2])), (int(box[1]), int(box[3]))
 			color = (0, 255, 0)
 			thickness = 2
@@ -173,7 +174,6 @@ class ClothingDataset(torch.utils.data.Dataset):
 			cnt += 1
 			if cnt > n_imgs:
 				break
-			
 		fig = plt.figure(figsize=(16, 8))
 		columns = 5
 		rows = 2

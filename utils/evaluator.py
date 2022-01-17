@@ -80,8 +80,8 @@ class Evaluator():
 			xmin_pred, ymin_pred, xmax_pred, ymax_pred = predicted_box
 			
 			#Intersection
-			delta_x = abs(min(xmax, xmax_pred) - max(xmin, xmin_pred))
-			delta_y = abs(min(ymax, ymax_pred) - max(ymin, ymin_pred))
+			delta_x = max(min(xmax, xmax_pred) - max(xmin, xmin_pred), 0)
+			delta_y = max(min(ymax, ymax_pred) - max(ymin, ymin_pred), 0)
 			
 			intersection = delta_x*delta_y
 			
@@ -118,6 +118,7 @@ class Evaluator():
 		with torch.no_grad():
 			for images, targets in self.dataloader:
 			
+				paths = [t['img_path'] for t in targets]
 				targets = [{k: v[0] for k, v in t.items() if k != 'img_path'} for t in targets]
 				
 				boxes = torch.stack([t['boxes'] for t in targets])
@@ -134,7 +135,7 @@ class Evaluator():
 				
 				for idx, image in enumerate(images):
 				
-					image = np.array(self.to_image(image))
+					image = np.array(Image.open(paths[idx]).convert('RGB'))
 					
 					box = boxes[idx]
 					label = labels[idx]
@@ -152,20 +153,20 @@ class Evaluator():
 					thickness = 2
 					image = cv2.rectangle(image, startpoint, endpoint, color, thickness)
 				
-					imgs.append((image, label, pred_label))
+					imgs.append((image, label, pred_label, box, pred_box))
 					
 				cnt += self.batch_size
 				if cnt > n_imgs:
 					break
 			
-		fig = plt.figure(figsize=(16, 8))
+		fig = plt.figure(figsize=(16, 10))
 		columns = 5
 		rows = 2
 		for i in range(1, columns*rows +1):
 			img = imgs[i][0]
 			fig.add_subplot(rows, columns, i)
 			plt.imshow(img)
-			plt.title(f'Clase Real: {imgs[i][1]}\nClase Predicha: {imgs[i][2]}')
+			plt.title(f'Clase Real: {imgs[i][1]}\nClase Predicha: {imgs[i][2]}\nIoU: {round(self.get_iou([imgs[i][3]], [imgs[i][4]]).item(), 4)}')
 		plt.show()
 		
 		

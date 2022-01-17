@@ -42,7 +42,8 @@ class Trainer():
 		        
 	    - lr_scheduler -> (torch.optim) Learning-Rate 
 		        Scheduler. If None, the learning-rate will
-		        be kept constant. Default: None
+		        be kept constant. If other StepLR(step_size=3,
+                	gamma=0.1) will be set. Default: None
 		        
 	    - use_gpu -> (Bool) If False, training on CPU. Default: True
 	    
@@ -60,7 +61,7 @@ class Trainer():
 			
 		self.lr_scheduler = None
 		if lr_scheduler is not None:
-			self.lr_scheduler = lr_scheduler
+			self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=3, gamma=0.1)
 
 		train_size = int(train_size*len(dataset))
 		dataset_train, dataset_test = torch.utils.data.random_split(dataset, [train_size, len(dataset)-train_size])
@@ -102,9 +103,9 @@ class Trainer():
 		
 		loss_classifier, loss_box = [], []
 
-		metric_logger = utils.MetricLogger(delimiter="  ")
-		metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
-		header = f"Epoch: [{epoch}]"
+		metric_logger = utils.MetricLogger(delimiter='  ')
+		metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+		header = f'Epoch: [{epoch}]'
 
 		for images, targets in metric_logger.log_every(self.train_dataloader, print_freq, header):
 
@@ -115,7 +116,6 @@ class Trainer():
 
 			loss_dict = self.model(images, targets)
 			losses = sum(loss for loss in loss_dict.values())
-			print(loss_dict)
 
 			loss_classifier.append(loss_dict[self.classification_name].item())
 			loss_box.append(loss_dict[self.box_name].item())
@@ -127,7 +127,7 @@ class Trainer():
 			self.optimizer.step()
 
 			metric_logger.update(loss=losses, **loss_dict)
-			metric_logger.update(lr=self.optimizer.param_groups[0]["lr"])
+			metric_logger.update(lr=self.optimizer.param_groups[0]['lr'])
 
 		return metric_logger, np.mean(loss_classifier), np.mean(loss_box)
 		
@@ -153,7 +153,7 @@ class Trainer():
 		
 		loss_classifier, loss_box = [], []
 		
-		metric_logger = utils.MetricLogger(delimiter="  ")
+		metric_logger = utils.MetricLogger(delimiter='  ')
 		header = 'Test:'
 
 		with torch.no_grad():
